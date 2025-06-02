@@ -1,2 +1,2 @@
 # shelux_macOS
-Linuxify your macos terminal
+Linuxify the macos terminal
