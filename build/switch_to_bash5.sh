@@ -1,15 +1,33 @@
 #!/usr/bin/env bash
 # switch_to_bash5.sh
 # Installs Bash 5 and bash-completion@2 via Homebrew,
-# adds it to /etc/shells, and uses `sudo chsh` to update your login shell.
-# Because sudo reads from a real TTY, you won’t get the Vim warning.
+# updates ~/.bash_profile on Apple Silicon, migrates aliases/functions from ~/.zshrc,
+# adds the new Bash to /etc/shells, and runs `sudo chsh` to make it your login shell.
+# Uses only BSD-compatible flags.
+
+# 1) Ensure Homebrew is on PATH (Apple Silicon default)
+EXPORT_LINE='export PATH="/opt/homebrew/bin:$PATH"'
+if ! grep -Fxq "$EXPORT_LINE" "$HOME/.bash_profile" 2>/dev/null; then
+  echo "$EXPORT_LINE" >> "$HOME/.bash_profile"
+fi
+
+# 2) Migrate aliases and simple function definitions from ~/.zshrc into ~/.bash_profile
+ZSHRC_FILE="$HOME/.zshrc"
+BASH_PROFILE="$HOME/.bash_profile"
+if [ -f "$ZSHRC_FILE" ]; then
+  grep -E '^(alias\s+|[[:alnum:]_]+\s*\(\))' "$ZSHRC_FILE" | while read -r line; do
+    if ! grep -Fxq "$line" "$BASH_PROFILE" 2>/dev/null; then
+      echo "$line" >> "$BASH_PROFILE"
+    fi
+  done
+fi
 
 set -euo pipefail
 
 echo "==== 1) Install Bash 5.x and bash-completion@2 via Homebrew ===="
 brew install bash bash-completion@2
 
-# Locate the new Bash binary
+# 3) Locate the new Bash binary
 BREW_BASH_PATH="$(brew --prefix bash)/bin/bash"
 echo "New Bash binary path: $BREW_BASH_PATH"
 
@@ -39,7 +57,6 @@ fi
 
 echo
 echo "==== 4) Enable bash-completion in ~/.bash_profile ===="
-BASH_PROFILE="$HOME/.bash_profile"
 if [[ ! -f "$BASH_PROFILE" ]]; then
   touch "$BASH_PROFILE"
   echo "  → Created $BASH_PROFILE"
@@ -48,10 +65,10 @@ fi
 COMPLETION_SNIPPET='
 # Load Homebrew’s bash-completion (if installed)
 if [ -f "$(brew --prefix)/etc/bash_completion" ]; then
-  . "$(brew --prefix)/etc/bash_completion"
+  . "$(brew --prefix)/etc/bash_compltion"
 fi
 '
-if ! grep -F "brew --prefix)/etc/bash_completion" "$BASH_PROFILE" >/dev/null 2>&1; then
+if ! grep -F "$(brew --prefix)/etc/bash_completion" "$BASH_PROFILE" >/dev/null 2>&1; then
   printf "%s\n" "$COMPLETION_SNIPPET" >> "$BASH_PROFILE"
   echo "  → Appended bash-completion snippet to $BASH_PROFILE"
 else
@@ -59,6 +76,6 @@ else
 fi
 
 echo
-echo "✅  Done. After reopening Terminal, verify with:"
+echo "✅ Done. After reopening Terminal, verify with:"
 echo "    echo \$SHELL"
 echo "    bash --version"

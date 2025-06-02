@@ -3,7 +3,7 @@
 # Dialog‐based menu with dynamic menu‐item variables to enable/disable options.
 
 set -euo pipefail
-
+trap 'clear; tput sgr0' EXIT
 DIR_NAME="build"   # must match your build/ folder
 
 # === SCALE setting ===
@@ -44,7 +44,7 @@ ENABLE_COREUTILS=1
 ENABLE_BASH5=1
 ENABLE_OH_MY_ZSH=1
 ENABLE_LINUX_UTILS=1
-ENABLE_TERMINALS=0
+ENABLE_TERMINALS=1
 ENABLE_BASH_PROMPT=1
 ENABLE_ZSH_PROMPT=1
 
@@ -59,7 +59,6 @@ build_menu_entries() {
   _labels_ref=()
 
   local idx=1
-
   if [ "$ENABLE_COREUTILS" -eq 1 ]; then
     _tags_ref+=("$idx")
     _labels_ref+=("GNU coreutils")
@@ -100,60 +99,34 @@ build_menu_entries() {
 # Map numeric choice to script path
 get_script_for_choice() {
   local choice=$1
-  local idx=1
 
-  if [ "$ENABLE_COREUTILS" -eq 1 ]; then
-    if [ "$choice" -eq "$idx" ]; then
+  case "$choice" in
+    1)
       echo "$DIR_NAME/setup_gnu_coreutils.sh"
-      return
-    fi
-    ((idx++))
-  fi
-  if [ "$ENABLE_BASH5" -eq 1 ]; then
-    if [ "$choice" -eq "$idx" ]; then
+      ;;
+    2)
       echo "$DIR_NAME/switch_to_bash5.sh"
-      return
-    fi
-    ((idx++))
-  fi
-  if [ "$ENABLE_OH_MY_ZSH" -eq 1 ]; then
-    if [ "$choice" -eq "$idx" ]; then
+      ;;
+    3)
       echo "$DIR_NAME/setup_oh_my_zsh.sh"
-      return
-    fi
-    ((idx++))
-  fi
-  if [ "$ENABLE_LINUX_UTILS" -eq 1 ]; then
-    if [ "$choice" -eq "$idx" ]; then
+      ;;
+    4)
       echo "$DIR_NAME/install_linux_tools.sh"
-      return
-    fi
-    ((idx++))
-  fi
-  if [ "$ENABLE_TERMINALS" -eq 1 ]; then
-    if [ "$choice" -eq "$idx" ]; then
+      ;;
+    5)
       echo "$DIR_NAME/install_terminals.sh"
-      return
-    fi
-    ((idx++))
-  fi
-  if [ "$ENABLE_BASH_PROMPT" -eq 1 ]; then
-    if [ "$choice" -eq "$idx" ]; then
+      ;;
+    6)
       echo "$DIR_NAME/tweak_prompt_bash.sh"
-      return
-    fi
-    ((idx++))
-  fi
-  if [ "$ENABLE_ZSH_PROMPT" -eq 1 ]; then
-    if [ "$choice" -eq "$idx" ]; then
+      ;;
+    7)
       echo "$DIR_NAME/tweak_prompt_zsh.sh"
-      return
-    fi
-    ((idx++))
-  fi
-
-  # If no match or user tries to exit
-  echo ""
+      ;;
+    *)
+      # If no match or user tries to exit
+      echo ""
+      ;;
+  esac
 }
 
 # Beginner‐friendly descriptions
@@ -273,25 +246,50 @@ while true; do
   tags=() labels=()
   build_menu_entries tags labels
 
+  # Determine each menu-item tag by matching its label
+  COREUTILS_TAG="" BASH5_TAG="" OHMY_TAG="" LINUX_TAG="" TERM_TAG="" BPROMPT_TAG="" ZPROMPT_TAG=""
+  for i in "${!labels[@]}"; do
+    case "${labels[i]}" in
+      "GNU coreutils")       COREUTILS_TAG=${tags[i]}   ;;  
+      "Bash 5.x")            BASH5_TAG=${tags[i]}      ;;  
+      "Oh My Zsh")           OHMY_TAG=${tags[i]}       ;;  
+      "Linux utilities")     LINUX_TAG=${tags[i]}      ;;  
+      "Terminal emulators")  TERM_TAG=${tags[i]}       ;;  
+      "Bash prompt")         BPROMPT_TAG=${tags[i]}    ;;  
+      "Zsh prompt")          ZPROMPT_TAG=${tags[i]}    ;;  
+    esac
+  done
+
   # Now “zip” them into a single array of tag/label pairs
   entries=()
   for i in "${!tags[@]}"; do
     entries+=("${tags[i]}" "${labels[i]}")
   done
 
-  # 1) Display the main menu with only enabled items
-  MENU_ITEMS_COUNT=$(( ${#entries[@]} / 2 ))
+  # Add an "Exit" entry with numeric tag one greater than existing items
+  EXIT_TAG=$(( ${#tags[@]} + 1 ))
+  entries+=("$EXIT_TAG" "Exit")
+  ITEM_COUNT=$(( ${#tags[@]} + 1 ))
+
+  # 1) Display the main menu with only enabled items + Exit
   CHOICE=$(dialog --clear \
                   --backtitle "macOS → Linux-like Environment" \
                   --title "Main Menu" \
-                  --cancel-label "Exit" \
+                  --no-cancel \
+                  --default-item "${tags[0]}" \
                   --menu "Use ↑/↓ to navigate, Enter to select:" \
-                  "$MENU_HEIGHT" "$MENU_WIDTH" "$MENU_ITEMS_COUNT" \
+                  "$MENU_HEIGHT" "$MENU_WIDTH" "$ITEM_COUNT" \
                   "${entries[@]}" \
                   3>&1 1>&2 2>&3)
 
   # If user pressed Esc/Cancel on the main menu, exit
   if [ $? -ne 0 ]; then
+    clear
+    exit 0
+  fi
+
+  # If user selected the Exit entry, quit
+  if [ "$CHOICE" -eq "$EXIT_TAG" ]; then
     clear
     exit 0
   fi
@@ -304,18 +302,82 @@ while true; do
             --yes-label "Proceed" \
             --no-label "Back" \
             --yesno "$FULLINFO" "$DETAILS_HEIGHT" "$DETAILS_WIDTH"; then
-    # Proceed → find and run corresponding script
-    script_path=$(get_script_for_choice "$CHOICE")
-    if [ -n "$script_path" ] && [ -x "$script_path" ]; then
-      run_script "$script_path"
+    # Proceed → find and run corresponding script or sub-menu for Bash 5.x
+    if [ "$CHOICE" -eq "$BASH5_TAG" ]; then
+      # Checklist for Bash 5.x choices
+      CHOICES=$(dialog --clear \
+                     --backtitle "macOS → Linux-like Environment" \
+                     --title "Bash 5.x Options" \
+                     --checklist "Select one or more actions for Bash 5.x:" \
+                     12 60 2 \
+                     1 "Install Bash 5 and bash-completion@2" on \
+                     2 "Install and change default shell to Bash 5" off \
+                     3>&1 1>&2 2>&3)
+      # If user cancels or selects nothing, return to main menu
+      if [ $? -ne 0 ] || [ -z "$CHOICES" ]; then
+        continue
+      fi
+      # CHOICES will be like "1 2" or "1" or "2"
+      for choice_tag in $CHOICES; do
+        case "$choice_tag" in
+          1)
+            clear
+            echo "Installing Bash 5 and bash-completion@2..."
+            brew install bash bash-completion@2
+            echo "Installation complete."
+            read -rp "Press Enter to continue..."
+            ;;
+          2)
+            script_path="$DIR_NAME/switch_to_bash5.sh"
+            if [ -x "$script_path" ]; then
+              bash "$script_path"
+            else
+              echo "Error: $script_path not found or not executable."
+              read -rp "Press Enter to continue..."
+            fi
+            ;;
+        esac
+      done
     else
-      clear
-      echo "Error: Script not found or not executable: $script_path"
-      echo "Make sure you ran build.sh and that '$DIR_NAME/' exists."
-      sleep 2
+      # Find which label corresponds to this numeric choice, then map to script
+      script_path=""
+      for i in "${!tags[@]}"; do
+        if [ "${tags[i]}" = "$CHOICE" ]; then
+          case "${labels[i]}" in
+            "GNU coreutils")     script_path="$DIR_NAME/setup_gnu_coreutils.sh" ;;
+            "Bash 5.x")         script_path="$DIR_NAME/switch_to_bash5.sh" ;;
+            "Oh My Zsh")        script_path="$DIR_NAME/setup_oh_my_zsh.sh" ;;
+            "Linux utilities")  script_path="$DIR_NAME/install_linux_tools.sh" ;;
+            "Terminal emulators") script_path="$DIR_NAME/install_terminals.sh" ;;
+            "Bash prompt")      script_path="$DIR_NAME/tweak_prompt_bash.sh" ;;
+            "Zsh prompt")       script_path="$DIR_NAME/tweak_prompt_zsh.sh" ;;
+          esac
+          break
+        fi
+      done
+      # Confirmation dialog before running the script
+      dialog --clear \
+             --backtitle "macOS → Linux-like Environment" \
+             --title "Confirm Execution" \
+             --yes-label "Yes" \
+             --no-label "No" \
+             --yesno "Are you sure you want to run $script_path?" 7 50
+      if [ $? -ne 0 ]; then
+        continue
+      fi
+      if [ -n "$script_path" ] && [ -x "$script_path" ]; then
+        run_script "$script_path"
+      else
+        clear
+        echo "Error: Script not found or not executable: $script_path"
+        echo "Make sure you ran build.sh and that '$DIR_NAME/' exists."
+        sleep 2
+      fi
     fi
   else
     # Any non‐zero return (Back, Esc, Cancel) → return to main menu
     continue
   fi
+echo "Default user/login shell:"
+dscl . -read /Users/$(whoami) UserShell
 done
