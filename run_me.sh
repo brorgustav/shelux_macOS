@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # run_me.sh
-# Dialog‐based menu with a single SCALE variable to adjust overall box sizes.
+# Dialog‐based menu with dynamic menu‐item variables to enable/disable options.
 
 set -euo pipefail
 
@@ -8,20 +8,18 @@ DIR_NAME="build"   # must match your build/ folder
 
 # === SCALE setting ===
 # Increase SCALE to make dialog boxes larger, decrease to make them smaller.
-# For example, SCALE=1 is “normal,” SCALE=2 doubles dimensions, SCALE=3 triples, etc.
 SCALE=1
 
 # === Base dimensions (before scaling) ===
 BASE_MENU_HEIGHT=20
 BASE_MENU_WIDTH=40
-MENU_ITEMS_COUNT=7
-
-BASE_DETAILS_HEIGHT=25
-BASE_DETAILS_WIDTH=80
 
 # === Compute final dimensions by applying SCALE ===
 MENU_HEIGHT=$(( BASE_MENU_HEIGHT * SCALE ))
 MENU_WIDTH=$(( BASE_MENU_WIDTH  * SCALE ))
+
+BASE_DETAILS_HEIGHT=25
+BASE_DETAILS_WIDTH=80
 DETAILS_HEIGHT=$(( BASE_DETAILS_HEIGHT * SCALE ))
 DETAILS_WIDTH=$(( BASE_DETAILS_WIDTH  * SCALE ))
 
@@ -39,6 +37,124 @@ if ! command -v dialog >/dev/null 2>&1; then
   echo "    brew install dialog"
   exit 1
 fi
+
+# === MENU‐ITEM VARIABLES ===
+# Set to 1 to enable, 0 to hide
+ENABLE_COREUTILS=1
+ENABLE_BASH5=1
+ENABLE_OH_MY_ZSH=1
+ENABLE_LINUX_UTILS=1
+ENABLE_TERMINALS=0
+ENABLE_BASH_PROMPT=1
+ENABLE_ZSH_PROMPT=1
+
+# === Helper FUNCTIONS ===
+
+# Compose an array of enabled menu items (tag and label)
+build_menu_entries() {
+  local -n _tags_ref=$1
+  local -n _labels_ref=$2
+
+  _tags_ref=()
+  _labels_ref=()
+
+  local idx=1
+
+  if [ "$ENABLE_COREUTILS" -eq 1 ]; then
+    _tags_ref+=("$idx")
+    _labels_ref+=("GNU coreutils")
+    ((idx++))
+  fi
+  if [ "$ENABLE_BASH5" -eq 1 ]; then
+    _tags_ref+=("$idx")
+    _labels_ref+=("Bash 5.x")
+    ((idx++))
+  fi
+  if [ "$ENABLE_OH_MY_ZSH" -eq 1 ]; then
+    _tags_ref+=("$idx")
+    _labels_ref+=("Oh My Zsh")
+    ((idx++))
+  fi
+  if [ "$ENABLE_LINUX_UTILS" -eq 1 ]; then
+    _tags_ref+=("$idx")
+    _labels_ref+=("Linux utilities")
+    ((idx++))
+  fi
+  if [ "$ENABLE_TERMINALS" -eq 1 ]; then
+    _tags_ref+=("$idx")
+    _labels_ref+=("Terminal emulators")
+    ((idx++))
+  fi
+  if [ "$ENABLE_BASH_PROMPT" -eq 1 ]; then
+    _tags_ref+=("$idx")
+    _labels_ref+=("Bash prompt")
+    ((idx++))
+  fi
+  if [ "$ENABLE_ZSH_PROMPT" -eq 1 ]; then
+    _tags_ref+=("$idx")
+    _labels_ref+=("Zsh prompt")
+    ((idx++))
+  fi
+}
+
+# Map numeric choice to script path
+get_script_for_choice() {
+  local choice=$1
+  local idx=1
+
+  if [ "$ENABLE_COREUTILS" -eq 1 ]; then
+    if [ "$choice" -eq "$idx" ]; then
+      echo "$DIR_NAME/setup_gnu_coreutils.sh"
+      return
+    fi
+    ((idx++))
+  fi
+  if [ "$ENABLE_BASH5" -eq 1 ]; then
+    if [ "$choice" -eq "$idx" ]; then
+      echo "$DIR_NAME/switch_to_bash5.sh"
+      return
+    fi
+    ((idx++))
+  fi
+  if [ "$ENABLE_OH_MY_ZSH" -eq 1 ]; then
+    if [ "$choice" -eq "$idx" ]; then
+      echo "$DIR_NAME/setup_oh_my_zsh.sh"
+      return
+    fi
+    ((idx++))
+  fi
+  if [ "$ENABLE_LINUX_UTILS" -eq 1 ]; then
+    if [ "$choice" -eq "$idx" ]; then
+      echo "$DIR_NAME/install_linux_tools.sh"
+      return
+    fi
+    ((idx++))
+  fi
+  if [ "$ENABLE_TERMINALS" -eq 1 ]; then
+    if [ "$choice" -eq "$idx" ]; then
+      echo "$DIR_NAME/install_terminals.sh"
+      return
+    fi
+    ((idx++))
+  fi
+  if [ "$ENABLE_BASH_PROMPT" -eq 1 ]; then
+    if [ "$choice" -eq "$idx" ]; then
+      echo "$DIR_NAME/tweak_prompt_bash.sh"
+      return
+    fi
+    ((idx++))
+  fi
+  if [ "$ENABLE_ZSH_PROMPT" -eq 1 ]; then
+    if [ "$choice" -eq "$idx" ]; then
+      echo "$DIR_NAME/tweak_prompt_zsh.sh"
+      return
+    fi
+    ((idx++))
+  fi
+
+  # If no match or user tries to exit
+  echo ""
+}
 
 # Beginner‐friendly descriptions
 get_full_info() {
@@ -153,23 +269,28 @@ run_script() {
 }
 
 while true; do
-  # 1) Display the main menu with fixed (scaled) dimensions
+  # Build arrays of enabled items
+  tags=() labels=()
+  build_menu_entries tags labels
+
+  # Now “zip” them into a single array of tag/label pairs
+  entries=()
+  for i in "${!tags[@]}"; do
+    entries+=("${tags[i]}" "${labels[i]}")
+  done
+
+  # 1) Display the main menu with only enabled items
+  MENU_ITEMS_COUNT=$(( ${#entries[@]} / 2 ))
   CHOICE=$(dialog --clear \
                   --backtitle "macOS → Linux-like Environment" \
                   --title "Main Menu" \
                   --cancel-label "Exit" \
                   --menu "Use ↑/↓ to navigate, Enter to select:" \
                   "$MENU_HEIGHT" "$MENU_WIDTH" "$MENU_ITEMS_COUNT" \
-                  1 "GNU coreutils" \
-                  2 "Bash 5.x" \
-                  3 "Oh My Zsh" \
-                  4 "Linux utilities" \
-                  5 "Terminal emulators" \
-                  6 "Bash prompt" \
-                  7 "Zsh prompt" \
+                  "${entries[@]}" \
                   3>&1 1>&2 2>&3)
 
-  # If user pressed Esc/Cancel, exit
+  # If user pressed Esc/Cancel on the main menu, exit
   if [ $? -ne 0 ]; then
     clear
     exit 0
@@ -177,34 +298,24 @@ while true; do
 
   # 2) Show “Details & Confirmation” with scaled dimensions
   FULLINFO=$(get_full_info "$CHOICE")
-  dialog --clear \
-         --backtitle "macOS → Linux-like Environment" \
-         --title "Details & Confirmation" \
-         --yes-label "Proceed" \
-         --no-label "Back" \
-         --yesno "$FULLINFO" "$DETAILS_HEIGHT" "$DETAILS_WIDTH"
-  ret=$?
-
-  if [ "$ret" -eq 0 ]; then
-    # User chose “Proceed” → run the corresponding script
-    clear
-    case "$CHOICE" in
-      1) run_script "$DIR_NAME/setup_gnu_coreutils.sh" ;;
-      2) run_script "$DIR_NAME/switch_to_bash5.sh" ;;
-      3) run_script "$DIR_NAME/setup_oh_my_zsh.sh" ;;
-      4) run_script "$DIR_NAME/install_linux_tools.sh" ;;
-      5) run_script "$DIR_NAME/install_terminals.sh" ;;
-      6) run_script "$DIR_NAME/tweak_prompt_bash.sh" ;;
-      7) run_script "$DIR_NAME/tweak_prompt_zsh.sh" ;;
-      *)
-        clear
-        echo "Invalid selection."
-        sleep 1
-        ;;
-    esac
-
-  elif [ "$ret" -eq 1 ] || [ "$ret" -eq 255 ]; then
-    # User chose “Back” (No=1) or pressed Esc (255) → return to main menu
+  if dialog --clear \
+            --backtitle "macOS → Linux-like Environment" \
+            --title "Details & Confirmation" \
+            --yes-label "Proceed" \
+            --no-label "Back" \
+            --yesno "$FULLINFO" "$DETAILS_HEIGHT" "$DETAILS_WIDTH"; then
+    # Proceed → find and run corresponding script
+    script_path=$(get_script_for_choice "$CHOICE")
+    if [ -n "$script_path" ] && [ -x "$script_path" ]; then
+      run_script "$script_path"
+    else
+      clear
+      echo "Error: Script not found or not executable: $script_path"
+      echo "Make sure you ran build.sh and that '$DIR_NAME/' exists."
+      sleep 2
+    fi
+  else
+    # Any non‐zero return (Back, Esc, Cancel) → return to main menu
     continue
   fi
 done
